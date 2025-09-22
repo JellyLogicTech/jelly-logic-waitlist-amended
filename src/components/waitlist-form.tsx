@@ -1,44 +1,100 @@
 "use client";
+
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
-import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
 import * as motion from "motion/react-client";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Form, FormControl, FormField, FormItem, FormMessage } from "@/components/ui/form";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormMessage,
+} from "@/components/ui/form";
 import { Loader2 } from "lucide-react";
 
 const formSchema = z.object({
-  name: z.string({ required_error: "Name is required." }).min(2, "Please enter your full name."),
-  email: z.string({ required_error: "Email address is required." }).email("Please enter a valid email address."),
+  email: z
+    .string({ required_error: "Email address is required." })
+    .email("Please enter a valid email address."),
 });
+
 type FormValues = z.infer<typeof formSchema>;
 
 export function WaitlistForm() {
   const [isSubmitting, setIsSubmitting] = useState(false);
+
   const form = useForm<FormValues>({
-    resolver: zodResolver(formSchema),
-    defaultValues: { name: "", email: "" },
+    defaultValues: {
+      email: "",
+    },
   });
 
   async function onSubmit(data: FormValues) {
     setIsSubmitting(true);
-    try {
-      const res = await fetch("/api/waitlist", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
+    form.clearErrors(); // clear errors
+
+    const validationResult = formSchema.safeParse(data);
+
+    if (!validationResult.success) {
+      validationResult.error.errors.forEach((error) => {
+        form.setError(error.path[0] as keyof FormValues, {
+          type: "manual",
+          message: error.message,
+        });
       });
-      const text = await res.text();
-      const body = text ? JSON.parse(text) : {};
-      if (!res.ok) throw new Error(body?.message || `Request failed: ${res.status}`);
-      toast.success(body?.message || "Successfully joined the waitlist!");
+      setIsSubmitting(false);
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/waitlist", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(validationResult.data),
+      });
+
+      let responseBody = {};
+      try {
+        const text = await response.text();
+        if (text) {
+          responseBody = JSON.parse(text);
+        }
+      } catch (parseError) {
+        console.error("Failed to parse response body:", parseError);
+        if (!response.ok) {
+          throw new Error(
+            `HTTP error ${response.status}: ${
+              response.statusText || "Request failed"
+            }`
+          );
+        }
+      }
+
+      if (!response.ok) {
+        throw new Error(
+          (responseBody as { message?: string })?.message ||
+            `Request failed with status: ${response.status}`
+        );
+      }
+
+      toast.success(
+        (responseBody as { message?: string })?.message ||
+          "Successfully joined the waitlist!"
+      );
       form.reset();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Something went wrong.");
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "An unexpected error occurred. Please try again."
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -48,79 +104,57 @@ export function WaitlistForm() {
     <Form {...form}>
       <motion.form
         onSubmit={form.handleSubmit(onSubmit)}
-        className="relative flex w-full flex-col items-center gap-3"
+        className="relative flex w-full max-w-md flex-col gap-3 sm:flex-row"
         initial={{ opacity: 0, y: 10, filter: "blur(8px)" }}
         animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
         transition={{ duration: 2, type: "spring" }}
       >
-        {/* Name */}
-        <FormField
-          control={form.control}
-          name="name"
-          render={({ field }) => (
-            <FormItem className="relative">
-              <FormControl>
-                <Input
-                  placeholder="Name"
-                  type="text"
-                  autoComplete="name"
-                  className="h-10 w-64 sm:w-72 px-4 text-center text-sm font-semibold
-                             bg-[#CCCC00	]/10 border border-[#CCCC00	]
-                             placeholder-[#1d1d1d] text-[#1d1d1d]
-                             focus:outline-none focus:ring-2 focus:ring-[#CCCC00	]
-                             rounded-lg"
-                  aria-label="Full name for waitlist"
-                  aria-invalid={!!form.formState.errors.name}
-                  {...field}
-                />
-              </FormControl>
-              <FormMessage className="absolute pt-1 text-xs text-red-600 dark:text-red-500" />
-            </FormItem>
-          )}
-        />
-
-        {/* Email */}
         <FormField
           control={form.control}
           name="email"
           render={({ field }) => (
-            <FormItem className="relative">
+            <FormItem className="flex-1">
               <FormControl>
                 <Input
-                  placeholder="Email"
+                  placeholder="Enter your email"
                   type="email"
                   autoComplete="email"
-                  className="h-10 w-64 sm:w-72 px-4 text-center text-sm font-semibold
-                             bg-[#CCCC00]/10 border border-[#CCCC00]
-                             placeholder-[#1d1d1d] text-[#1d1d1d]
-                             focus:outline-none focus:ring-2 focus:ring-[#CCCC00]
-                             rounded-lg"
+                  className="h-11 rounded-md
+      border border-[#ea92c4]
+      animate-pulse-ring
+    "
                   aria-label="Email address for waitlist"
                   aria-invalid={!!form.formState.errors.email}
                   {...field}
                 />
               </FormControl>
+
               <FormMessage className="absolute pt-1 text-xs text-red-600 dark:text-red-500" />
             </FormItem>
           )}
         />
-
         <Button
           type="submit"
           disabled={isSubmitting}
-          className="mt-2 h-10 w-48 rounded-lg font-poppins font-bold
-                     border-2 border-[#1d1d1d] text-[#1d1d1d] bg-transparent
-                     hover:bg-[#fd5526] hover:border-[#fd5526] hover:text-white
-                     transition-colors"
+          className="
+    h-11
+    shrink-0
+    rounded-md
+    px-6
+    font-poppins
+    font-semibold
+    bg-[#5a4af4]
+    text-white
+  "
           aria-live="polite"
         >
           {isSubmitting ? (
             <>
-              <Loader2 className="mr-2 animate-spin" />
+              <Loader2 className="animate-spin" />
               Joining...
             </>
           ) : (
-            "JOIN WAITLIST"
+            "Join Waitlist"
           )}
         </Button>
       </motion.form>
